@@ -1,5 +1,5 @@
 const express = require('express');
-const pool = require('../db');
+const { query: dbQuery } = require('../db');
 
 const router = express.Router();
 
@@ -11,7 +11,7 @@ router.get('/me', (req, res) => {
 
 router.get('/applications', async (req, res) => {
   try {
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       'SELECT * FROM job_applications WHERE user_id = $1 ORDER BY created_at DESC',
       [req.user.id]
     );
@@ -29,7 +29,7 @@ router.post('/applications', async (req, res) => {
 
   try {
     // Generate short_id: count existing apps for this user+company, then format
-    const { rows: existing } = await pool.query(
+    const { rows: existing } = await dbQuery(
       `SELECT COUNT(*) FROM job_applications WHERE user_id = $1 AND company ILIKE $2`,
       [req.user.id, company]
     );
@@ -37,7 +37,7 @@ router.post('/applications', async (req, res) => {
     const prefix = company.replace(/\s+/g, '').slice(0, 10).toUpperCase();
     const short_id = `${prefix}-${String(seq).padStart(3, '0')}`;
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       `INSERT INTO job_applications (user_id, short_id, company, role, level, geography, jd_text, plan_gist)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
@@ -51,13 +51,13 @@ router.post('/applications', async (req, res) => {
 
 router.get('/applications/:id', async (req, res) => {
   try {
-    const { rows: app } = await pool.query(
+    const { rows: app } = await dbQuery(
       'SELECT * FROM job_applications WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
     if (!app.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows: rounds } = await pool.query(
+    const { rows: rounds } = await dbQuery(
       'SELECT * FROM interview_rounds WHERE job_application_id = $1 ORDER BY order_index',
       [app[0].id]
     );
@@ -71,13 +71,13 @@ router.get('/applications/:id', async (req, res) => {
 
 router.get('/applications/:id/rounds', async (req, res) => {
   try {
-    const { rows: app } = await pool.query(
+    const { rows: app } = await dbQuery(
       'SELECT id FROM job_applications WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
     if (!app.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       'SELECT * FROM interview_rounds WHERE job_application_id = $1 ORDER BY order_index',
       [app[0].id]
     );
@@ -96,13 +96,13 @@ router.post('/applications/:id/rounds', async (req, res) => {
   if (!round_type) return res.status(400).json({ error: 'round_type is required' });
 
   try {
-    const { rows: app } = await pool.query(
+    const { rows: app } = await dbQuery(
       'SELECT id FROM job_applications WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
     if (!app.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       `INSERT INTO interview_rounds
          (job_application_id, round_type, order_index, status, confidence_score,
           estimated_duration_minutes, question_count, depth_calibration_rationale)
@@ -127,7 +127,7 @@ router.patch('/rounds/:id', async (req, res) => {
 
   try {
     // Verify ownership via join
-    const { rows: check } = await pool.query(
+    const { rows: check } = await dbQuery(
       `SELECT ir.id FROM interview_rounds ir
        JOIN job_applications ja ON ja.id = ir.job_application_id
        WHERE ir.id = $1 AND ja.user_id = $2`,
@@ -137,7 +137,7 @@ router.patch('/rounds/:id', async (req, res) => {
 
     const setClauses = updates.map(([k], i) => `${k} = $${i + 2}`).join(', ');
     const values = [req.params.id, ...updates.map(([, v]) => v)];
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       `UPDATE interview_rounds SET ${setClauses} WHERE id = $1 RETURNING *`,
       values
     );
@@ -151,7 +151,7 @@ router.patch('/rounds/:id', async (req, res) => {
 
 router.get('/rounds/:id/question-sets', async (req, res) => {
   try {
-    const { rows: check } = await pool.query(
+    const { rows: check } = await dbQuery(
       `SELECT ir.id FROM interview_rounds ir
        JOIN job_applications ja ON ja.id = ir.job_application_id
        WHERE ir.id = $1 AND ja.user_id = $2`,
@@ -159,7 +159,7 @@ router.get('/rounds/:id/question-sets', async (req, res) => {
     );
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       'SELECT * FROM question_sets WHERE round_id = $1 ORDER BY attempt_number',
       [req.params.id]
     );
@@ -176,7 +176,7 @@ router.post('/rounds/:id/question-sets', async (req, res) => {
   }
 
   try {
-    const { rows: check } = await pool.query(
+    const { rows: check } = await dbQuery(
       `SELECT ir.id FROM interview_rounds ir
        JOIN job_applications ja ON ja.id = ir.job_application_id
        WHERE ir.id = $1 AND ja.user_id = $2`,
@@ -184,7 +184,7 @@ router.post('/rounds/:id/question-sets', async (req, res) => {
     );
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       `INSERT INTO question_sets (round_id, attempt_number, questions, difficulty_profile)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
@@ -202,7 +202,7 @@ router.post('/rounds/:id/attempts', async (req, res) => {
   const { question_set_id } = req.body;
 
   try {
-    const { rows: check } = await pool.query(
+    const { rows: check } = await dbQuery(
       `SELECT ir.id FROM interview_rounds ir
        JOIN job_applications ja ON ja.id = ir.job_application_id
        WHERE ir.id = $1 AND ja.user_id = $2`,
@@ -210,7 +210,7 @@ router.post('/rounds/:id/attempts', async (req, res) => {
     );
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       `INSERT INTO round_attempts (round_id, question_set_id, started_at)
        VALUES ($1, $2, now())
        RETURNING *`,
@@ -228,7 +228,7 @@ router.patch('/attempts/:id', async (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'No valid fields to update' });
 
   try {
-    const { rows: check } = await pool.query(
+    const { rows: check } = await dbQuery(
       `SELECT ra.id FROM round_attempts ra
        JOIN interview_rounds ir ON ir.id = ra.round_id
        JOIN job_applications ja ON ja.id = ir.job_application_id
@@ -239,7 +239,7 @@ router.patch('/attempts/:id', async (req, res) => {
 
     const setClauses = updates.map(([k], i) => `${k} = $${i + 2}`).join(', ');
     const values = [req.params.id, ...updates.map(([, v]) => v)];
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       `UPDATE round_attempts SET ${setClauses} WHERE id = $1 RETURNING *`,
       values
     );
@@ -256,7 +256,7 @@ router.post('/attempts/:id/questions', async (req, res) => {
   if (!question_id) return res.status(400).json({ error: 'question_id is required' });
 
   try {
-    const { rows: check } = await pool.query(
+    const { rows: check } = await dbQuery(
       `SELECT ra.id FROM round_attempts ra
        JOIN interview_rounds ir ON ir.id = ra.round_id
        JOIN job_applications ja ON ja.id = ir.job_application_id
@@ -265,7 +265,7 @@ router.post('/attempts/:id/questions', async (req, res) => {
     );
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       `INSERT INTO question_attempts
          (round_attempt_id, question_id, user_answer, strong_points, missed_points, interviewer_expectation, follow_up_count)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -285,7 +285,7 @@ router.post('/attempts/:id/questions', async (req, res) => {
 
 router.get('/attempts/:id/questions', async (req, res) => {
   try {
-    const { rows: check } = await pool.query(
+    const { rows: check } = await dbQuery(
       `SELECT ra.id FROM round_attempts ra
        JOIN interview_rounds ir ON ir.id = ra.round_id
        JOIN job_applications ja ON ja.id = ir.job_application_id
@@ -294,7 +294,7 @@ router.get('/attempts/:id/questions', async (req, res) => {
     );
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows } = await pool.query(
+    const { rows } = await dbQuery(
       'SELECT * FROM question_attempts WHERE round_attempt_id = $1 ORDER BY created_at',
       [req.params.id]
     );

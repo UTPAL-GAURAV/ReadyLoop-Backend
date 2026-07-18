@@ -2,7 +2,7 @@ const express = require('express');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const jwt = require('jsonwebtoken');
-const pool = require('../db');
+const { query: dbQuery } = require('../db');
 
 const router = express.Router();
 
@@ -18,7 +18,7 @@ passport.use(new GoogleStrategy(
       const email = profile.emails?.[0]?.value;
       const name = profile.displayName;
 
-      const { rows } = await pool.query(
+      const { rows } = await dbQuery(
         `INSERT INTO users (google_id, email, name)
          VALUES ($1, $2, $3)
          ON CONFLICT (google_id) DO UPDATE SET name = EXCLUDED.name
