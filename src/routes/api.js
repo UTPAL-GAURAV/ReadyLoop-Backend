@@ -120,6 +120,21 @@ router.post('/applications/:id/rounds', async (req, res) => {
   }
 });
 
+router.get('/rounds/:id', async (req, res) => {
+  try {
+    const { rows } = await dbQuery(
+      `SELECT ir.* FROM interview_rounds ir
+       JOIN job_applications ja ON ja.id = ir.job_application_id
+       WHERE ir.id = $1 AND ja.user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/rounds/:id', async (req, res) => {
   const allowed = ['status', 'confidence_score', 'estimated_duration_minutes', 'question_count', 'depth_calibration_rationale', 'order_index'];
   const updates = Object.entries(req.body).filter(([k]) => allowed.includes(k));
