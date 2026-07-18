@@ -222,6 +222,26 @@ router.post('/rounds/:id/attempts', async (req, res) => {
   }
 });
 
+router.get('/rounds/:id/attempts', async (req, res) => {
+  try {
+    const { rows: check } = await dbQuery(
+      `SELECT ir.id FROM interview_rounds ir
+       JOIN job_applications ja ON ja.id = ir.job_application_id
+       WHERE ir.id = $1 AND ja.user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!check.length) return res.status(404).json({ error: 'Not found' });
+
+    const { rows } = await dbQuery(
+      `SELECT * FROM round_attempts WHERE round_id = $1 ORDER BY started_at`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/attempts/:id', async (req, res) => {
   const allowed = ['confidence_score', 'status', 'completed_at'];
   const updates = Object.entries(req.body).filter(([k]) => allowed.includes(k));
