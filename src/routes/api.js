@@ -270,7 +270,10 @@ router.get('/rounds/:id/attempts', async (req, res) => {
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await dbQuery(
-      `SELECT * FROM round_attempts WHERE round_id = $1 ORDER BY started_at`,
+      `SELECT ra.*, qs.attempt_number AS question_set_attempt_number
+       FROM round_attempts ra
+       LEFT JOIN question_sets qs ON qs.id = ra.question_set_id
+       WHERE ra.round_id = $1 ORDER BY ra.started_at`,
       [req.params.id]
     );
     res.json(rows);
