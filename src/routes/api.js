@@ -257,6 +257,25 @@ router.get('/rounds/:id/attempts', async (req, res) => {
   }
 });
 
+router.delete('/attempts/:id', async (req, res) => {
+  try {
+    const { rows: check } = await dbQuery(
+      `SELECT ra.id FROM round_attempts ra
+       JOIN interview_rounds ir ON ir.id = ra.round_id
+       JOIN job_applications ja ON ja.id = ir.job_application_id
+       WHERE ra.id = $1 AND ja.user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!check.length) return res.status(404).json({ error: 'Not found' });
+
+    await dbQuery('DELETE FROM question_attempts WHERE round_attempt_id = $1', [req.params.id]);
+    await dbQuery('DELETE FROM round_attempts WHERE id = $1', [req.params.id]);
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/attempts/:id', async (req, res) => {
   const allowed = ['confidence_score', 'status', 'completed_at'];
   const updates = Object.entries(req.body).filter(([k]) => allowed.includes(k));
