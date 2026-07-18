@@ -11,11 +11,24 @@ router.get('/me', (req, res) => {
 
 router.get('/applications', async (req, res) => {
   try {
-    const { rows } = await dbQuery(
+    const { rows: apps } = await dbQuery(
       'SELECT * FROM job_applications WHERE user_id = $1 ORDER BY created_at DESC',
       [req.user.id]
     );
-    res.json(rows);
+    if (!apps.length) return res.json([]);
+
+    const ids = apps.map(a => a.id);
+    const { rows: rounds } = await dbQuery(
+      `SELECT * FROM interview_rounds WHERE job_application_id = ANY($1) ORDER BY order_index`,
+      [ids]
+    );
+
+    const roundsByApp = rounds.reduce((acc, r) => {
+      (acc[r.job_application_id] ??= []).push(r);
+      return acc;
+    }, {});
+
+    res.json(apps.map(a => ({ ...a, rounds: roundsByApp[a.id] ?? [] })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
