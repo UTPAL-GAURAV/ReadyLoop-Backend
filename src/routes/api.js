@@ -225,11 +225,20 @@ router.post('/rounds/:id/attempts', async (req, res) => {
     );
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
+    let resolvedQsId = question_set_id ?? null;
+    if (!resolvedQsId) {
+      const { rows: qs } = await dbQuery(
+        `SELECT id FROM question_sets WHERE round_id = $1 ORDER BY attempt_number DESC LIMIT 1`,
+        [req.params.id]
+      );
+      if (qs.length) resolvedQsId = qs[0].id;
+    }
+
     const { rows } = await dbQuery(
       `INSERT INTO round_attempts (round_id, question_set_id, started_at)
        VALUES ($1, $2, now())
        RETURNING *`,
-      [req.params.id, question_set_id ?? null]
+      [req.params.id, resolvedQsId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -340,19 +349,35 @@ router.post('/attempts/:id/questions', async (req, res) => {
 router.get('/attempts/:id/questions', async (req, res) => {
   try {
     const { rows: check } = await dbQuery(
-      `SELECT ra.id FROM round_attempts ra
+      `SELECT ra.id, ra.question_set_id, qs.questions,
+              (SELECT questions FROM question_sets WHERE round_id = ir.id ORDER BY attempt_number DESC LIMIT 1) AS fallback_questions
+       FROM round_attempts ra
        JOIN interview_rounds ir ON ir.id = ra.round_id
        JOIN job_applications ja ON ja.id = ir.job_application_id
+       LEFT JOIN question_sets qs ON qs.id = ra.question_set_id
        WHERE ra.id = $1 AND ja.user_id = $2`,
       [req.params.id, req.user.id]
     );
     if (!check.length) return res.status(404).json({ error: 'Not found' });
 
+    const questionSetQuestions = check[0].questions ?? check[0].fallback_questions ?? null;
+
     const { rows } = await dbQuery(
       'SELECT * FROM question_attempts WHERE round_attempt_id = $1 ORDER BY created_at',
       [req.params.id]
     );
-    res.json(rows);
+
+    const enriched = rows.map(row => {
+      const idx = parseInt(row.question_id, 10);
+      const qs = questionSetQuestions && !isNaN(idx) ? questionSetQuestions[idx - 1] : null;
+      return {
+        ...row,
+        question_text: qs?.questionText ?? null,
+        evaluation_rubric: qs?.evaluationRubric ?? null,
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
